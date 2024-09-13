@@ -1,0 +1,9 @@
+[core]
+    path = "./db_data/setup"
+    schema = "full"
+[db]
+    address = "ws://localhost:8000"
+    username = "root"
+    password = "root"
+    ns = "default"
+    db = "default"

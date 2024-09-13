@@ -1,0 +1,20 @@
+# security
+.env
+
+# persistence
+client_data/*
+!client_data/.gitkeep
+db_data/*
+!db_data/.gitkeep
+!db_data/init.surql
+!db_data/setup
+
+# rust
+/target
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+

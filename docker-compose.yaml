@@ -1,0 +1,21 @@
+version: "3.8"
+services:
+  surreal:
+    image: surrealdb/surrealdb
+    ports:
+      - "8000:8000"
+    environment:
+      - USER=root
+      - PASSWORD=root
+      - PATH=./data/
+    # volumes:
+    #   - ./db_data/:/data
+    command: [
+        "start",
+        "--auth",
+        "--user",
+        "root",
+        "--pass",
+        "root",
+        # "file:/data/database",
+      ]
