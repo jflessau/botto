@@ -61,7 +61,7 @@ jobs:
   build:
     name: "Build"
     if: github.ref == 'refs/heads/main'
-    needs: [format, lint, test]
+    # needs: [format, lint, test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

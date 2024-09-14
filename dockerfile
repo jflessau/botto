@@ -1,25 +1,21 @@
-FROM rust:latest as builder
+FROM clux/muslrust:stable as build
+RUN apt-get -yq update && apt-get -yqq install openssh-client
 
-WORKDIR /usr/src/botto
+COPY . .
 
-# install system dependencies
+ENV HOMESERVER=https://example.com
+ENV BOT_USERNAME=botto
+ENV BOT_PASSWORD=muchsecretwow
+ENV DB_URL=ws://example.com:8000
+ENV DB_USER=botto
+ENV DB_PASSWORD=muchsecret
+ENV RUST_LOG=error,botto=trace
 
-RUN apt update
-RUN apt install -y musl-tools
+RUN eval `ssh-agent -s` && \
+  cargo build --target x86_64-unknown-linux-musl --release
 
-# build
+# copy important stuff to smaller base image
+FROM alpine
+COPY --from=build /volume/target/x86_64-unknown-linux-musl/release/botto /
 
-RUN rustup target add x86_64-unknown-linux-musl
-COPY src ./src
-COPY Cargo.toml .
-COPY Cargo.lock .
-RUN cargo install --target x86_64-unknown-linux-musl --path .
-
-# use multi-stage build to reduce image size
-
-FROM alpine:latest
-ENV RUST_LOG=error,botto=info
-COPY --from=builder /usr/local/cargo/bin/botto .
-RUN mkdir client_data 
-
-ENTRYPOINT ["./botto"]
+CMD ["/botto"]
