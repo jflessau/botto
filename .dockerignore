@@ -1,4 +1,4 @@
 dockerfile
 target/
-db_data
+db_data/content
 client_data

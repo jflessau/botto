@@ -8,6 +8,9 @@ RUN mkdir /data
 RUN addgroup -gid 1000 appgroup && adduser --uid 1000 --ingroup appgroup --disabled-password appuser
 RUN chown -R appuser:appgroup /surreal /data
 
-USER appuser 
+RUN chmod -R 777 /data
+RUN chmod -R 777 /surreal
+
+USER 1000 
 
 ENTRYPOINT ["/surreal"]
