@@ -9,7 +9,7 @@ ENV BOT_PASSWORD=muchsecretwow
 ENV DB_URL=ws://example.com:8000
 ENV DB_USER=botto
 ENV DB_PASSWORD=muchsecret
-ENV RUST_LOG=error,botto=trace
+ENV RUST_LOG=warn,botto=info
 
 RUN eval `ssh-agent -s` && \
   cargo build --target x86_64-unknown-linux-musl --release

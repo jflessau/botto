@@ -574,7 +574,6 @@ dependencies = [
  "chrono",
  "dotenv",
  "env_logger",
- "include_dir",
  "matrix-sdk",
  "mime",
  "rand",

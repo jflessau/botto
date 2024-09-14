@@ -1,5 +1,7 @@
 # 🤖 botto
 
+<img alt="chat bot's avatar image showing a robots shiny metal face" src="avatar-circle.png" width="180px"/>
+
 A [matrix](https://matrix.org) chat bot written in rust using the [matrix-rust-sdk](https://github.com/matrix-org/matrix-rust-sdk).
 
 ## Development
@@ -49,13 +51,15 @@ Set reminders in x minutes, hours or days:
 `!reminder 2 hours: Feed the cat`  
 `!reminder 10d: Go swimming`
 
-Recurring:  
-`!remind every 2h: Drink water`
+Recurring: `!remind every 2h: Drink water`
 
-With a random time:
-`!remind 1-3d: Go to the gym`
+With a random time: `!remind 1-3d: Go to the gym`
 
-Recurring with a random time:  
-`!remind every 10 to 20 days: Do the thing`
+Recurring with a random time: `!remind every 10 to 20 days: Do the thing`
 
 The random time interval is recalculated each time the reminder is sent, meaning a 1-3 day reminder could trigger after `1.5` days the first time and `2.2` days the next.
+
+Manage reminders with:  
+`!reminders` -> list of reminders  
+`!deletereminder 3` -> delete 3rd reminder from the list  
+`!deleteAllReminders` -> delete all reminders
