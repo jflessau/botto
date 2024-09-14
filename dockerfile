@@ -18,4 +18,6 @@ RUN eval `ssh-agent -s` && \
 FROM alpine
 COPY --from=build /volume/target/x86_64-unknown-linux-musl/release/botto /
 
+RUN mkdir client_data
+
 CMD ["/botto"]

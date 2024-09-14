@@ -1,0 +1,13 @@
+FROM surrealdb/surrealdb as old
+
+FROM clux/muslrust:stable as build
+
+COPY --from=old /surreal /surreal
+
+RUN mkdir /data
+RUN addgroup -gid 1000 appgroup && adduser --uid 1000 --ingroup appgroup --disabled-password appuser
+RUN chown -R appuser:appgroup /surreal /data
+
+USER appuser 
+
+ENTRYPOINT ["/surreal"]

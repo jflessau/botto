@@ -49,13 +49,13 @@ Set reminders in x minutes, hours or days:
 `!reminder 2 hours: Feed the cat`  
 `!reminder 10d: Go swimming`
 
-Set recurring reminder:  
+Recurring:  
 `!remind every 2h: Drink water`
 
-Set reminder with a random time:  
+With a random time:
 `!remind 1-3d: Go to the gym`
 
-Set recurring reminder with a random time:  
+Recurring with a random time:  
 `!remind every 10 to 20 days: Do the thing`
 
 The random time interval is recalculated each time the reminder is sent, meaning a 1-3 day reminder could trigger after `1.5` days the first time and `2.2` days the next.
