@@ -118,4 +118,4 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/jflessau/surrealdb_non_root:latest
+            ghcr.io/jflessau/surrealdb:latest
