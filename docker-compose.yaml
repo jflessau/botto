@@ -4,18 +4,15 @@ services:
     image: surrealdb/surrealdb
     ports:
       - "8000:8000"
-    environment:
-      - USER=root
-      - PASSWORD=root
-      - PATH=./data/
-    # volumes:
-    #   - ./db_data/:/data
-    command: [
+    volumes:
+      - ./db_data/content:/data/
+    command:
+      [
         "start",
         "--auth",
         "--user",
-        "root",
+        "botto",
         "--pass",
-        "root",
-        # "file:/data/database",
+        "muchsecret",
+        "file:/data/database",
       ]

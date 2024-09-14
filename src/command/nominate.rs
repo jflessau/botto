@@ -22,6 +22,7 @@ pub async fn user(room: &Room) -> String {
                 .collect::<Vec<_>>();
 
             debug!("members: {m:?}");
+            info!("👤 nominating");
 
             m.choose(&mut rand::thread_rng())
                 .map(|n| n.to_string())

@@ -88,6 +88,13 @@ impl Item {
 
         (v, s)
     }
+
+    fn dice_count(&self) -> usize {
+        match self {
+            Item::Number { .. } => 1,
+            Item::Dices { amount, .. } => *amount,
+        }
+    }
 }
 
 pub fn dice(text: &str) -> String {
@@ -106,7 +113,7 @@ pub fn dice(text: &str) -> String {
 
     let items = captures
         .iter()
-        .map(|capture| {
+        .flat_map(|capture| {
             let mut s = capture.clone();
             let positive = !capture.contains('-');
 
@@ -118,23 +125,27 @@ pub fn dice(text: &str) -> String {
             debug!("parts: {parts:?}");
 
             let item = match parts.len() {
-                0 => Item::Number {
+                0 => Some(Item::Number {
                     positive,
                     number: 0,
-                },
-                1 => Item::Number {
+                }),
+                1 => Some(Item::Number {
                     positive,
                     number: parts.first().unwrap_or(&"0").parse().unwrap_or_default(),
-                },
-                2 => Item::Dices {
-                    positive,
-                    amount: parts.first().unwrap_or(&"1").parse().unwrap_or_default(),
-                    sides: parts.get(1).unwrap_or(&"1").parse().unwrap_or_default(),
-                },
-                _ => Item::Number {
+                }),
+                2 => parts
+                    .first()
+                    .map(|a| a.parse().unwrap_or(0))
+                    .filter(|&a| a > 0)
+                    .map(|amount| Item::Dices {
+                        positive,
+                        amount,
+                        sides: parts.get(1).unwrap_or(&"1").parse().unwrap_or_default(),
+                    }),
+                _ => Some(Item::Number {
                     positive,
                     number: 0,
-                },
+                }),
             };
 
             item
@@ -158,7 +169,15 @@ pub fn dice(text: &str) -> String {
         .collect::<Vec<String>>()
         .join(" ");
 
-    format!("{explanation}\n\n🧮 {sum}")
+    let dice_count = items.iter().map(|i| i.dice_count()).sum::<usize>();
+
+    info!("🎲 rolling: {explanation} => {sum}");
+
+    if dice_count > 1 {
+        format!("{explanation}\n\n🟰 {sum}")
+    } else {
+        format!("{sum}")
+    }
 }
 
 #[cfg(test)]
@@ -203,6 +222,15 @@ mod tests {
     #[test]
     pub fn dice_result() {
         // first
+
+        let (v, s) = Item::Dices {
+            positive: true,
+            amount: 0,
+            sides: 0,
+        }
+        .result(true);
+        assert_eq!(v, 0);
+        assert_eq!(s, "0");
 
         let (v, s) = Item::Dices {
             positive: true,
@@ -259,6 +287,16 @@ mod tests {
         assert_eq!(s, "-(1 + 1)");
 
         // not first
+
+        let (v, s) = Item::Dices {
+            positive: true,
+            amount: 0,
+            sides: 0,
+        }
+        .result(false);
+        assert_eq!(v, 0);
+        assert_eq!(s, "+ 0");
+
         let (v, s) = Item::Dices {
             positive: true,
             amount: 1,

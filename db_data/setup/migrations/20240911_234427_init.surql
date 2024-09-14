@@ -9,17 +9,11 @@ define field last_sent_at on table reminder type option<datetime>;
 define field next_send_at on table reminder type option<datetime>;
 define field created_at on table reminder type datetime default time::now();
 
-define function fn::create_reminder($room_id: string, $title: string, $interval_unit: string, $min_interval: int, $max_interval: option<int>, $recurring: bool) {
-  create reminder set 
-    room_id = $room_id,
-    title = $title,
-    interval_unit = $interval_unit,
-    min_interval = $min_interval,
-    max_interval = fn::max_interval($min_interval, $max_interval),
-    recurring = $recurring,
-    last_sent_at = none,
-    next_send_at = fn::next_send_at($interval_unit, $min_interval, $max_interval);
-};
+define event set_next_send_at on table reminder
+  when $event = "CREATE"
+  then (
+    update reminder set next_send_at = fn::next_send_at($after.interval_unit, $after.min_interval, $after.max_interval) where id = $after.id
+  );
 
 define function fn::max_interval($min: int, $max: option<int>) {
   return if ($max is not none) {

@@ -1,46 +1,162 @@
 use crate::prelude::*;
 use regex::Regex;
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use tokio::time::{sleep, Duration as TokioDuration};
 
 pub async fn new(room_id: &RoomId, text: &str, db: &Surreal<Any>) -> Result<String> {
-    let reminder = Reminder::try_from_str(text)?;
-
-    let res: Vec<String> = db
-        .create(format!(
-            r#"
-            fn::create_reminder(
-                "{room_id}",
-                "{msg}", 
-                "{time_unit}",
-                {min},
-                {max},
-                {recurring}
-            );
-        "#,
-            room_id = room_id,
-            msg = reminder.message,
-            time_unit = reminder.time_unit.to_surreal_str(),
-            min = reminder.interval_min,
-            max = reminder.interval_max,
-            recurring = reminder.recurring,
-        ))
-        .await?;
-
-    debug!("reminder created: {res:?}");
-
-    Ok(reminder.to_string())
+    match Reminder::try_from_str(text, room_id) {
+        Ok(reminder) => {
+            let db_res: Vec<Reminder> = db.create("reminder").content(&reminder).await?;
+            info!("⏲️ reminder created: {db_res:?}");
+            Ok(format!("Reminder created: {}", reminder))
+        }
+        Err(err) => {
+            warn!("fails to parse reminder from {text}, error: {err:?}");
+            Ok("Sorry, I don't know how to parse that reminder.\nUse the !botto command to get some hints.".to_string())
+        }
+    }
 }
 
+pub async fn list(room_id: &RoomId, db: &Surreal<Any>) -> Result<String> {
+    let reminders: Vec<Reminder> = db
+        .query("select * from reminder where room_id = $room_id order by created_at asc")
+        .bind(("room_id", room_id.to_string()))
+        .await?
+        .take(0)?;
+
+    if reminders.is_empty() {
+        return Ok(
+            "No reminders found. Create one with e.g.\n\n!reminder 2 days: Take out the trash.\n\nOr use the !botto command to get more info."
+                .to_string(),
+        );
+    }
+
+    info!("⏲️ list {} reminders", reminders.len());
+
+    let mut res = "⏲️ Reminders:".to_string();
+    for (n, r) in reminders.iter().enumerate() {
+        res.push_str(&format!("\n{}. {r}", n + 1));
+    }
+
+    Ok(res)
+}
+
+pub async fn delete_all(room_id: &RoomId, db: &Surreal<Any>) -> Result<String> {
+    db.query("delete from reminder where room_id = $room_id")
+        .bind(("room_id", room_id.to_string()))
+        .await?;
+
+    info!("⏲️🗑️ All reminders deleted for room: {room_id}");
+
+    Ok("All reminders deleted.".to_string())
+}
+
+pub async fn delete(room_id: &RoomId, text: &str, db: &Surreal<Any>) -> Result<Option<String>> {
+    let re = Regex::new(r"([0-9]+)")?;
+
+    let Some(index) = re
+        .find_iter(text)
+        .next()
+        .and_then(|m| m.as_str().parse::<usize>().ok())
+    else {
+        warn!("fails to parse index from text: {text}");
+        return Ok(None);
+    };
+
+    debug!("index: {index:?}");
+
+    let reminders: Vec<Reminder> = db
+        .query("select * from reminder where room_id = $room_id order by created_at asc")
+        .bind(("room_id", room_id.to_string()))
+        .await?
+        .take(0)?;
+
+    debug!("reminder_ids: {reminders:#?}");
+
+    let Some(reminder) = reminders.get(index.saturating_sub(1)) else {
+        debug!(
+            "tried to get reminder by index: {index}, but max index is {}",
+            reminders.len()
+        );
+        return Ok(None);
+    };
+
+    let reminder: Option<Reminder> = db.delete(&reminder.id).await?;
+
+    if let Some(reminder) = reminder {
+        info!("⏲️🗑️ Reminder deleted: {reminder}");
+        Ok(Some(format!("Reminder deleted: {reminder}")))
+    } else {
+        Ok(None)
+    }
+}
+
+pub async fn notify(db: Surreal<Any>, matrix_client: Client) -> Result<()> {
+    loop {
+        sleep(TokioDuration::from_secs(1)).await;
+        trace!("checking for due reminders");
+
+        let due_reminders: Vec<Reminder> = db
+            .query("select * from reminder where next_send_at and next_send_at < time::now()")
+            .await?
+            .take(0)?;
+
+        if due_reminders.is_empty() {
+            continue;
+        }
+
+        debug!("found {} due reminders", due_reminders.len());
+
+        for r in due_reminders {
+            let room_id = RoomId::parse(&r.room_id)?;
+            let Some(room) = matrix_client.get_room(&room_id) else {
+                warn!("room {room_id} not found to send reminder");
+                continue;
+            };
+
+            // update reminder in db
+
+            debug!("updating reminder {r} in db");
+            let _r = db
+                .query("fn::send_reminder($reminder)")
+                .bind(("reminder", &r.id))
+                .await?
+                .check()
+                .map_err(|err| {
+                    warn!(
+                        "fails to call fn::send_reminder in db on reminder {}, error: {err:?}",
+                        r.id
+                    )
+                });
+
+            // send reminder notification
+
+            let content = RoomMessageEventContent::text_plain(format!("{}\n🔔🔔🔔", r.title));
+            info!("🔔 sending reminder '{}' to room {room_id}", r.title);
+            let _ = room
+                .send(content)
+                .await
+                .map_err(|err| warn!("fails to send reminder to room {room_id}, error: {err:?}"));
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Reminder {
-    interval_min: usize,
-    interval_max: usize,
-    time_unit: TimeUnit,
+    id: Thing,
+    room_id: String,
+    title: String,
+    interval_unit: String,
+    min_interval: usize,
+    max_interval: Option<usize>,
     recurring: bool,
-    message: String,
+    last_sent_at: Option<DateTime<Utc>>,
+    next_send_at: Option<DateTime<Utc>>,
 }
 
 impl Reminder {
-    fn try_from_str(text: &str) -> Result<Self> {
+    fn try_from_str(text: &str, room_id: &RoomId) -> Result<Self> {
         let re = Regex::new(
             r"!reminder([ ]*)(?P<recurring>(?i)[every ]*)(?P<min>[0-9]*)(?P<from_to>(?i)[^(0-9|m|h|d)]*)(?P<max>[0-9]*)(?P<delimiter>(?i)[^(0-9|m|h|d)]*)(?P<unit>(?i)[m|h|d]*)(.*):(?P<msg>.{1,200})",
         )?;
@@ -59,102 +175,75 @@ impl Reminder {
             bail!("reminder min is required")
         };
         debug!("min: {min}");
-        let Some(time_unit) = groups.get(7).map(|s| s.trim().to_lowercase()) else {
-            bail!("reminder time_unit is required")
+        let Some(interval_unit) = groups.get(7).map(|s| s.trim().to_lowercase()) else {
+            bail!("reminder interval_unit is required")
         };
-        debug!("time_unit: {time_unit}");
-
-        let Some(message) = groups.get(9) else {
-            bail!("reminder message is required")
+        let interval_unit = if interval_unit.contains("m") {
+            "minute"
+        } else if interval_unit.contains("h") {
+            "hour"
+        } else if interval_unit.contains("d") {
+            "day"
+        } else {
+            bail!("reminder interval_unit is invalid")
         };
-        debug!("message: {message}");
+        debug!("interval_unit: {interval_unit}");
 
-        let time_unit = TimeUnit::try_from_str(time_unit)?;
+        let Some(title) = groups.get(9) else {
+            bail!("reminder title is required")
+        };
+        debug!("title: {title}");
+
         let min: usize = min.trim().parse()?;
-        let mut max = groups
+        let max: Option<usize> = groups
             .get(5)
             .and_then(|s| {
                 Some(s.trim()).filter(|s| !s.is_empty()).map(|s| {
-                    s.parse().unwrap_or_else(|err| {
+                    let max = s.parse().unwrap_or_else(|err| {
                         warn!("fails to parse {s} to max, {err:?}");
                         min
-                    })
+                    });
+                    match max.cmp(&min) {
+                        Ordering::Greater => Some(max),
+                        _ => None,
+                    }
                 })
             })
-            .unwrap_or(min);
-        if max < min {
-            max = min;
-        }
+            .flatten();
 
-        debug!("new reminder with: {min} - {max} {time_unit}: {message}");
-
-        Ok(Reminder {
-            interval_min: min,
-            interval_max: max,
-            time_unit,
+        let reminder = Reminder {
+            id: Thing::from(("reminder", Uuid::new_v4().to_string().as_str())),
+            room_id: room_id.to_string(),
+            title: title.to_string(),
+            interval_unit: interval_unit.to_string(),
+            min_interval: min,
+            max_interval: max,
             recurring,
-            message: message.to_string(),
-        })
+            last_sent_at: None,
+            next_send_at: None,
+        };
+
+        debug!("new reminder: {reminder:?}");
+
+        Ok(reminder)
     }
 }
 
 impl Display for Reminder {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         let recurring = if self.recurring { "every " } else { "" };
-        let range = if self.interval_min == self.interval_max {
-            format!(
-                "{} {}{}",
-                self.interval_min,
-                self.time_unit,
-                if self.interval_min == 1 { "" } else { "s" }
-            )
+        let range = if let Some(max) = self.max_interval {
+            format!("{} - {} {}s", self.min_interval, max, self.interval_unit)
         } else {
             format!(
-                "{} - {} {}s",
-                self.interval_min, self.interval_max, self.time_unit
+                "{} {}{}",
+                self.min_interval,
+                self.interval_unit,
+                if self.min_interval == 1 { "" } else { "s" }
             )
         };
 
-        write!(f, "Reminder {recurring}{range}: {}", self.message)
-    }
-}
-
-enum TimeUnit {
-    Minute,
-    Hour,
-    Day,
-}
-
-impl Display for TimeUnit {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        match self {
-            Self::Minute => write!(f, "minute"),
-            Self::Hour => write!(f, "hour"),
-            Self::Day => write!(f, "day"),
-        }
-    }
-}
-
-impl TimeUnit {
-    fn try_from_str(unit: String) -> Result<Self> {
-        if unit.contains("m") {
-            Ok(Self::Minute)
-        } else if unit.contains("h") {
-            Ok(Self::Hour)
-        } else if unit.contains("d") {
-            Ok(Self::Day)
-        } else {
-            bail!("Invalid time unit: {unit}")
-        }
-    }
-
-    fn to_surreal_str(&self) -> String {
-        match self {
-            Self::Minute => "minute",
-            Self::Hour => "hour",
-            Self::Day => "day",
-        }
-        .to_string()
+        write!(f, "{recurring}{range}: {}", self.title)
     }
 }
 
@@ -165,7 +254,7 @@ mod tests {
 
     #[test_log]
     pub fn reminder_from_str() {
-        let input = vec![
+        let messages = vec![
             "!reminder 1 minutes: Take out the trash.",
             "!reminder 12 minute: Take out the trash",
             "!reminder 31 M: Take out the trash",
@@ -191,11 +280,26 @@ mod tests {
             "!reminder 13 - 3 days: Take out the trash",
             "!reminder every1 -asfas 📹 3d: Take out the trash",
             "!reminder 1 -- to 3 d: Take out the trash",
+            "!reminder 10 minutes: Check the oven.",
+            "!reminder 10 minutes: Check the oven.",
+            "!reminder 2 hours: Laundry is done.",
+            "!reminder 10 days: Mow the lawn.",
+            "!reminder every 2h: Drink water.",
+            "!reminder every 2-5 days: Clean the bathroom.",
+            "!reminder every 30 to 60 days: Get a haircut.",
+            "!reminder 10 minutes: Check the oven",
+            "!reminder 2 hours: Laundry is done",
+            "!reminder 10 days: Mow the lawn",
+            "!reminder every 42 days: Get a haircut.",
+            "!reminder 1-3d: Go to the gym",
+            "!reminder 1-3d: Go to the gym every 1-3 days",
         ];
 
-        for s in input {
-            debug!("parsing reminder from: {s}");
-            Reminder::try_from_str(s).expect("reminder");
+        let room_id =
+            RoomId::parse("!WBGmhYXnxVfSYOoHua:matrix.com").expect("fails to parse room_id");
+        for m in messages {
+            debug!("parsing reminder from: {m}");
+            Reminder::try_from_str(m, &room_id).expect("reminder");
         }
     }
 }

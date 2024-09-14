@@ -1,14 +1,13 @@
 use crate::{command::*, prelude::*};
 
-use dotenv::dotenv;
 use matrix_sdk::{
     config::SyncSettings,
     matrix_auth::MatrixSession,
     ruma::events::room::{
         member::StrippedRoomMemberEvent,
-        message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+        message::{MessageType, OriginalSyncRoomMessageEvent},
     },
-    Client, Error, LoopCtrl, Room, RoomState,
+    Error, LoopCtrl, Room, RoomState,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use serde::{Deserialize, Serialize};
@@ -16,9 +15,6 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 pub async fn start_client(db: Surreal<Any>) -> Result<()> {
-    dotenv().ok();
-    tracing_subscriber::fmt::init();
-
     // create or restore session
 
     let sqlite_file = Path::new("client_data/sqlite_db");
@@ -101,23 +97,44 @@ pub async fn start_client(db: Surreal<Any>) -> Result<()> {
 
     info!("🦻 client listens to updates");
 
-    client.add_event_handler(on_stripped_state_member);
     let db_clone = db.clone();
-    client.add_event_handler(|event, room| on_room_message(event, room, db_clone));
-    client
-        .sync_with_result_callback(sync_settings, |sync_result| async move {
-            let response = sync_result?;
-            persist_sync_token(session_file, response.next_batch)
-                .await
-                .map_err(|err| {
-                    error!("fails to persist sync token: {err}");
-                    Error::UnknownError(err.into())
-                })?;
+    let client_clone = client.clone();
 
-            Ok(LoopCtrl::Continue)
-        })
-        .await
-        .context("fails to sync with callback")?;
+    let reminder_notifier = reminder::notify(db_clone, client_clone);
+
+    let sync_client = async {
+        client.add_event_handler(on_stripped_state_member);
+        let db_clone = db.clone();
+        client.add_event_handler(|event, room| on_room_message(event, room, db_clone));
+        let Err(err) = client
+            .sync_with_result_callback(sync_settings, |sync_result| async move {
+                let response = sync_result?;
+                persist_sync_token(session_file, response.next_batch)
+                    .await
+                    .map_err(|err| {
+                        error!("fails to persist sync token: {err}");
+                        Error::UnknownError(err.into())
+                    })?;
+
+                Ok(LoopCtrl::Continue)
+            })
+            .await
+        else {
+            bail!("sync stopped without an error, despite the library's docs stating it should only exit on error");
+        };
+        bail!("sync stopped: {err:?}");
+    };
+
+    let err = tokio::select! {
+        err = reminder_notifier => {
+            err
+        }
+        err = sync_client => {
+            err
+        }
+    };
+
+    error!("error: {err:#?}");
 
     Ok(())
 }
@@ -177,7 +194,7 @@ async fn on_room_message(
     room: Room,
     db: Surreal<Any>,
 ) -> Result<()> {
-    debug!("message from room {}, event: {:?}", room.room_id(), event);
+    trace!("message from room {}, event: {:?}", room.room_id(), event);
 
     if room.state() != RoomState::Joined {
         debug!("ignoring message from room {}, not joined", room.room_id());
@@ -189,21 +206,35 @@ async fn on_room_message(
     };
 
     let text = text_content.body.trim();
-    let resp = if text.starts_with("!botto") {
+    let cmd = text.to_lowercase();
+    // help
+    let resp = if cmd.starts_with("!botto") {
         Some(help::text())
-    } else if text.starts_with("!conch") {
+    // conch
+    } else if cmd.starts_with("!conch") {
         Some(conch::answer())
-    } else if text.starts_with("!coinflip") {
+    // coinflip
+    } else if cmd.starts_with("!coinflip") {
         Some(coin::flip())
-    } else if text.starts_with("!nominate") {
+    // nominate
+    } else if cmd.starts_with("!nominate") {
         Some(nominate::user(&room).await)
-    } else if text.starts_with("!r ") {
-        Some(roll::dice(text))
-    } else if text.starts_with("!reminder") {
+    // roll dice
+    } else if cmd.starts_with("!r ") {
+        Some(roll::dice(&cmd))
+    // reminder
+    } else if cmd.starts_with("!reminder ") {
         Some(reminder::new(room.room_id(), text, &db).await?)
+    } else if cmd.starts_with("!reminders") {
+        Some(reminder::list(room.room_id(), &db).await?)
+    } else if cmd.starts_with("!deleteallreminder") {
+        Some(reminder::delete_all(room.room_id(), &db).await?)
+    } else if cmd.starts_with("!deletereminder") {
+        reminder::delete(room.room_id(), text, &db).await?
+    // no command
     } else {
-        debug!(
-            "ignoring message {text} from room {}, no matching command",
+        trace!(
+            "ignoring message from room {}, no matching command",
             room.room_id()
         );
         None
@@ -311,7 +342,7 @@ async fn build_client(sqlite_file: &Path) -> anyhow::Result<(Client, ClientSessi
         .collect();
 
     loop {
-        let homeserver: String = std::env::var("SERVER_URL").expect("SERVER_URL must be set");
+        let homeserver: String = std::env::var("HOMESERVER").expect("HOMESERVER must be set");
 
         match Client::builder()
             .homeserver_url(&homeserver)

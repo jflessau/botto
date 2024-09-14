@@ -2,6 +2,7 @@ use crate::prelude::*;
 use rand::seq::SliceRandom;
 
 pub fn answer() -> String {
+    info!("🐚 answering");
     let answers = [
         "Maybe someday.",
         "Nothing.",

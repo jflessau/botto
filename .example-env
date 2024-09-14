@@ -1,0 +1,9 @@
+HOMESERVER=https://example.com
+BOT_USERNAME=botto-1234
+BOT_PASSWORD=muchsecret
+
+DB_URL=ws://localhost:8000
+DB_USER=botto
+DB_PASSWORD=muchsecret
+
+RUST_LOG=error,botto=debug
