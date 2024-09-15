@@ -3,15 +3,21 @@ use crate::{command::*, prelude::*};
 use matrix_sdk::{
     config::SyncSettings,
     matrix_auth::MatrixSession,
-    ruma::events::room::{
-        member::StrippedRoomMemberEvent,
-        message::{MessageType, OriginalSyncRoomMessageEvent},
+    ruma::{
+        events::room::{
+            member::StrippedRoomMemberEvent,
+            message::{MessageType, OriginalSyncRoomMessageEvent},
+        },
+        OwnedUserId,
     },
     Error, LoopCtrl, Room, RoomState,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
+};
 use tokio::fs;
 
 pub async fn start_client(db: Surreal<Any>) -> Result<()> {
@@ -19,6 +25,7 @@ pub async fn start_client(db: Surreal<Any>) -> Result<()> {
 
     let sqlite_file = Path::new("client_data/sqlite_db");
     let session_file = Path::new("client_data/session.json");
+    let password: String = std::env::var("BOT_PASSWORD").expect("BOT_PASSWORD must be set");
 
     if sqlite_file.exists() != session_file.exists() {
         warn!("expected sqlite file and session file to both exist or not exist, deleting the existing file to stat over");
@@ -43,7 +50,7 @@ pub async fn start_client(db: Surreal<Any>) -> Result<()> {
     } else {
         info!("📝 no session file found, creating new session...");
         (
-            login(sqlite_file, session_file)
+            login(sqlite_file, session_file, &password)
                 .await
                 .context("fails to login")?,
             None as Option<String>,
@@ -102,10 +109,16 @@ pub async fn start_client(db: Surreal<Any>) -> Result<()> {
 
     let reminder_notifier = reminder::notify(db_clone, client_clone);
 
+    let client_ref = &client;
+    let password_ref = &password;
+    let perform_cross_sign = AtomicBool::new(true);
+    let perform_cross_sign_ref = &perform_cross_sign;
+
     let sync_client = async {
         client.add_event_handler(on_stripped_state_member);
         let db_clone = db.clone();
         client.add_event_handler(|event, room| on_room_message(event, room, db_clone));
+
         let Err(err) = client
             .sync_with_result_callback(sync_settings, |sync_result| async move {
                 let response = sync_result?;
@@ -115,6 +128,22 @@ pub async fn start_client(db: Surreal<Any>) -> Result<()> {
                         error!("fails to persist sync token: {err}");
                         Error::UnknownError(err.into())
                     })?;
+
+                if let Some(user_id) = client_ref.user_id().map(|u| u.to_owned()) {
+                    if perform_cross_sign_ref.swap(false, Ordering::SeqCst) {
+                        tokio::spawn(bootstrap_cross_signing(
+                            client_ref.clone(),
+                            user_id.clone(),
+                            password_ref.clone(),
+                        ));
+
+                        perform_cross_sign_ref.store(false, Ordering::SeqCst);
+                    } else {
+                        trace!("cross-signing was already bootstrapped");
+                    }
+                } else {
+                    warn!("user_id is not set, cross-signing bootstrap skipped");
+                }
 
                 Ok(LoopCtrl::Continue)
             })
@@ -286,7 +315,7 @@ struct FullSession {
     sync_token: Option<String>,
 }
 
-async fn login(sqlite_file: &Path, session_file: &Path) -> Result<Client> {
+async fn login(sqlite_file: &Path, session_file: &Path, password: &str) -> Result<Client> {
     info!("No previous session found, logging in…");
 
     let (client, client_session) = build_client(sqlite_file)
@@ -296,10 +325,9 @@ async fn login(sqlite_file: &Path, session_file: &Path) -> Result<Client> {
 
     loop {
         let username: String = std::env::var("BOT_USERNAME").expect("BOT_USERNAME must be set");
-        let password: String = std::env::var("BOT_PASSWORD").expect("BOT_PASSWORD must be set");
 
         match matrix_auth
-            .login_username(&username, &password)
+            .login_username(&username, password)
             .initial_device_display_name("persist-session client")
             .await
         {
@@ -426,4 +454,41 @@ async fn persist_sync_token(session_file: &Path, sync_token: String) -> anyhow::
         .context("fails to write session file")?;
 
     Ok(())
+}
+
+async fn bootstrap_cross_signing(
+    client: Client,
+    user_id: OwnedUserId,
+    password: String,
+) -> Result<()> {
+    info!("🔑 cross-signing");
+    if let Err(e) = client.encryption().bootstrap_cross_signing(None).await {
+        use matrix_sdk::ruma::api::client::uiaa;
+
+        info!("🔑 first cross-signing attempt failed (thats expected), now retrying with password");
+
+        if let Some(response) = e.as_uiaa_response() {
+            let mut password = uiaa::Password::new(user_id.into(), password);
+            password.session = response.session.clone();
+
+            client
+                .encryption()
+                .bootstrap_cross_signing(Some(uiaa::AuthData::Password(password)))
+                .await
+                .map_err(|e| {
+                    error!("🔑 cross-signing failed: {e:?}");
+                    e
+                })
+                .context("fails to bootstrap cross-signing")?;
+
+            info!("🔑✅ cross-signing successful");
+        } else {
+            bail!("UIAA response was expected but not found");
+        }
+
+        Ok(())
+    } else {
+        trace!("🔑🤷 cross-signing was unnecessary");
+        Ok(())
+    }
 }

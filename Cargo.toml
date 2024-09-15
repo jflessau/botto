@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = "1.0"
 chrono = "0.4"
 dotenv = "0.15"
-matrix-sdk = "0.7"
+matrix-sdk = { version = "0.7.1", features = ["e2e-encryption"] }
 mime = "0.3"
 rand = "0.8"
 regex = "1.10"

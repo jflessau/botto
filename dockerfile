@@ -24,6 +24,7 @@ RUN mkdir -p /db_data/setup
 COPY --from=build /volume/target/x86_64-unknown-linux-musl/release/botto /
 COPY db_data/setup db_data/setup
 COPY .surrealdb /.surrealdb
+COPY avatar.jpg .
 
 RUN ls -R db_data
 RUN ls /
