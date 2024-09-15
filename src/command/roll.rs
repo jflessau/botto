@@ -2,6 +2,89 @@ use crate::prelude::*;
 use rand::Rng;
 use regex::Regex;
 
+pub fn dice(text: &str) -> String {
+    let re =
+        Regex::new(r"(([-+]{0,1})([ ]*)([0-9]{0,10})([ dD]*)([0-9]+))").expect("regex is valid");
+
+    let captures: Vec<String> = re
+        .captures_iter(text)
+        .flat_map(|caps| {
+            caps.get(0)
+                .map(|c| c.as_str().trim().to_lowercase().to_string())
+        })
+        .collect();
+
+    debug!("captures: {captures:?}");
+
+    let items = captures
+        .iter()
+        .flat_map(|capture| {
+            let mut s = capture.clone();
+            let positive = !capture.contains('-');
+
+            s = s.replace("+", "");
+            s = s.replace("-", "");
+            s = s.replace(" ", "");
+
+            let parts: Vec<&str> = s.split('d').collect();
+            debug!("parts: {parts:?}");
+
+            let item = match parts.len() {
+                0 => Some(Item::Number {
+                    positive,
+                    number: 0,
+                }),
+                1 => Some(Item::Number {
+                    positive,
+                    number: parts.first().unwrap_or(&"0").parse().unwrap_or_default(),
+                }),
+                2 => parts
+                    .first()
+                    .map(|a| a.parse().unwrap_or(0))
+                    .filter(|&a| a > 0)
+                    .map(|amount| Item::Dices {
+                        positive,
+                        amount,
+                        sides: parts.get(1).unwrap_or(&"1").parse().unwrap_or_default(),
+                    }),
+                _ => Some(Item::Number {
+                    positive,
+                    number: 0,
+                }),
+            };
+
+            item
+        })
+        .collect::<Vec<_>>();
+
+    let results = items
+        .iter()
+        .enumerate()
+        .map(|(n, item)| {
+            trace!("item: {:?} => {:?}", item, item.result(n == 0));
+            item.result(n == 0)
+        })
+        .collect::<Vec<_>>();
+
+    let sum = results.iter().map(|r| r.0).sum::<i64>();
+
+    let explanation = results
+        .iter()
+        .map(|r| r.1.clone())
+        .collect::<Vec<String>>()
+        .join(" ");
+
+    let dice_count = items.iter().map(|i| i.dice_count()).sum::<usize>();
+
+    info!("🎲 rolling: {explanation} => {sum}");
+
+    if dice_count > 1 {
+        format!("{explanation}\n\n🟰 {sum}")
+    } else {
+        format!("{sum}")
+    }
+}
+
 #[derive(Debug)]
 pub enum Item {
     Number {
@@ -94,89 +177,6 @@ impl Item {
             Item::Number { .. } => 1,
             Item::Dices { amount, .. } => *amount,
         }
-    }
-}
-
-pub fn dice(text: &str) -> String {
-    let re =
-        Regex::new(r"(([-+]{0,1})([ ]*)([0-9]{0,10})([ dD]*)([0-9]+))").expect("regex is valid");
-
-    let captures: Vec<String> = re
-        .captures_iter(text)
-        .flat_map(|caps| {
-            caps.get(0)
-                .map(|c| c.as_str().trim().to_lowercase().to_string())
-        })
-        .collect();
-
-    debug!("captures: {captures:?}");
-
-    let items = captures
-        .iter()
-        .flat_map(|capture| {
-            let mut s = capture.clone();
-            let positive = !capture.contains('-');
-
-            s = s.replace("+", "");
-            s = s.replace("-", "");
-            s = s.replace(" ", "");
-
-            let parts: Vec<&str> = s.split('d').collect();
-            debug!("parts: {parts:?}");
-
-            let item = match parts.len() {
-                0 => Some(Item::Number {
-                    positive,
-                    number: 0,
-                }),
-                1 => Some(Item::Number {
-                    positive,
-                    number: parts.first().unwrap_or(&"0").parse().unwrap_or_default(),
-                }),
-                2 => parts
-                    .first()
-                    .map(|a| a.parse().unwrap_or(0))
-                    .filter(|&a| a > 0)
-                    .map(|amount| Item::Dices {
-                        positive,
-                        amount,
-                        sides: parts.get(1).unwrap_or(&"1").parse().unwrap_or_default(),
-                    }),
-                _ => Some(Item::Number {
-                    positive,
-                    number: 0,
-                }),
-            };
-
-            item
-        })
-        .collect::<Vec<_>>();
-
-    let results = items
-        .iter()
-        .enumerate()
-        .map(|(n, item)| {
-            trace!("item: {:?} => {:?}", item, item.result(n == 0));
-            item.result(n == 0)
-        })
-        .collect::<Vec<_>>();
-
-    let sum = results.iter().map(|r| r.0).sum::<i64>();
-
-    let explanation = results
-        .iter()
-        .map(|r| r.1.clone())
-        .collect::<Vec<String>>()
-        .join(" ");
-
-    let dice_count = items.iter().map(|i| i.dice_count()).sum::<usize>();
-
-    info!("🎲 rolling: {explanation} => {sum}");
-
-    if dice_count > 1 {
-        format!("{explanation}\n\n🟰 {sum}")
-    } else {
-        format!("{sum}")
     }
 }
 

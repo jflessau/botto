@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use regex::Regex;
 use std::cmp::Ordering;
-use std::fmt::{Display, Formatter, Result as FmtResult};
 use tokio::time::{sleep, Duration as TokioDuration};
 
 pub async fn new(room_id: &RoomId, text: &str, db: &Surreal<Any>) -> Result<String> {
@@ -189,7 +188,7 @@ impl Reminder {
         };
         debug!("interval_unit: {interval_unit}");
 
-        let Some(title) = groups.get(9) else {
+        let Some(title) = groups.get(9).map(|s| s.trim()) else {
             bail!("reminder title is required")
         };
         debug!("title: {title}");

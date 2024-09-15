@@ -26,22 +26,34 @@ Add the bot to a room and type a message starting with `!botto` to get a list of
 
 ### Commands
 
-#### Bot info
+#### ℹ️ Bot info
 
 `!botto` -> `list of commands`
 
-#### Roll dice
+#### 🎲 Roll dice
 
 `!r 1d20` -> `8`  
 `!r 1d20 + 2d8 - 1d4 + 3` -> `15 + (8 + 4) - 4 + 3 🟰 26`
 
-#### Randomness
+#### 🪙 Coin flip
 
-| cmd         | description                                                                                                   | example response |
-| ----------- | ------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `!coinflip` | get a random coin side                                                                                        | `Heads`          |
-| `!conch`    | get a random answer from the [magic conch shell](http://en.spongepedia.org/index.php?title=Magic_Conch_Shell) | `Maybe someday.` |
-| `!nominate` | get a random user from the chat                                                                               | `Jane Doe`       |
+`!coinflip` -> `Heads`
+
+#### 🐚 Magic conch shell
+
+`!conch` -> `Maybe someday.`
+
+#### 👤 Random user from the chat
+
+`!nominate` -> `Jane Doe`
+
+#### 🔘 Choose from a list
+
+`!choose pizza, pasta, sushi` -> `pizza`
+
+#### 🪨 Rock, paper, scissors
+
+`!rps rock` -> `🪨 💥 ✂️  -  You win!`
 
 #### Reminder
 
@@ -51,13 +63,15 @@ Set reminders in x minutes, hours or days:
 `!reminder 2 hours: Feed the cat`  
 `!reminder 10d: Go swimming`
 
-Recurring: `!remind every 2h: Drink water`
+**Recurring**: `!remind every 2h: Drink water`
 
-With a random time: `!remind 1-3d: Go to the gym`
+With a **random time**: `!remind 1-3d: Go to the gym`
 
-Recurring with a random time: `!remind every 10 to 20 days: Do the thing`
+**Recurring** with a **random time**: `!remind every 10 to 20 days: Do the thing`
 
 The random time interval is recalculated each time the reminder is sent, meaning a 1-3 day reminder could trigger after `1.5` days the first time and `2.2` days the next.
+
+**Hint:** Combine with other commands: `!reminder every 1-2d: !choose gym, run, swim`
 
 Manage reminders with:  
 `!reminders` -> list of reminders  

@@ -89,8 +89,8 @@ pub async fn start_client(db: Surreal<Any>) -> Result<()> {
                 break;
             }
             Err(error) => {
-                println!("An error occurred during initial sync: {error}");
-                println!("Trying again…");
+                error!("An error occurred during initial sync: {error}");
+                info!("Trying again…");
             }
         }
     }
@@ -219,6 +219,12 @@ async fn on_room_message(
     // nominate
     } else if cmd.starts_with("!nominate") {
         Some(nominate::user(&room).await)
+    // choose
+    } else if cmd.starts_with("!choose") {
+        Some(choose::option(text.replace("!choose", "")))
+    // rock, paper, scissors
+    } else if cmd.starts_with("!rps") {
+        Some(rps::play(text.replace("!rps", "")))
     // roll dice
     } else if cmd.starts_with("!r ") {
         Some(roll::dice(&cmd))
@@ -281,7 +287,7 @@ struct FullSession {
 }
 
 async fn login(sqlite_file: &Path, session_file: &Path) -> Result<Client> {
-    println!("No previous session found, logging in…");
+    info!("No previous session found, logging in…");
 
     let (client, client_session) = build_client(sqlite_file)
         .await
@@ -298,12 +304,12 @@ async fn login(sqlite_file: &Path, session_file: &Path) -> Result<Client> {
             .await
         {
             Ok(_) => {
-                println!("Logged in as {username}");
+                info!("Logged in as {username}");
                 break;
             }
             Err(error) => {
-                println!("Error logging in: {error}");
-                println!("Please try again\n");
+                error!("Error logging in: {error}");
+                info!("Please try again\n");
             }
         }
     }
@@ -364,8 +370,8 @@ async fn build_client(sqlite_file: &Path) -> anyhow::Result<(Client, ClientSessi
                 matrix_sdk::ClientBuildError::AutoDiscovery(_)
                 | matrix_sdk::ClientBuildError::Url(_)
                 | matrix_sdk::ClientBuildError::Http(_) => {
-                    println!("Error checking the homeserver: {error}");
-                    println!("Please try again\n");
+                    error!("Error checking the homeserver: {error}");
+                    info!("Please try again\n");
                 }
                 _ => {
                     return Err(error.into());

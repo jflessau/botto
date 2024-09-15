@@ -5,7 +5,10 @@ pub use matrix_sdk::{
     Client,
 };
 pub use serde::{Deserialize, Serialize};
-pub use std::env;
+pub use std::{
+    env,
+    fmt::{Display, Formatter, Result as FmtResult},
+};
 pub use surrealdb::{engine::any::Any, sql::Thing, Surreal};
 pub use tracing::{debug, error, info, trace, warn};
 pub use uuid::Uuid;

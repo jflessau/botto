@@ -68,8 +68,12 @@ define function fn::send_reminder($reminder: record<reminder>) {
       return none;
     };
 
-    update $reminder set
-      last_sent_at = time::now(),
-      next_send_at = $next_send_at;
+    if $next_send_at is none {
+      delete $reminder;
+    } else {
+      update $reminder set
+        last_sent_at = time::now(),
+        next_send_at = $next_send_at;
+      }
     }
 };
