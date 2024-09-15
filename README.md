@@ -55,7 +55,7 @@ Add the bot to a room and type a message starting with `!botto` to get a list of
 
 `!rps rock` -> `🪨 💥 ✂️  -  You win!`
 
-#### Reminder
+#### ⏲️ Reminder
 
 Set reminders in x minutes, hours or days:
 
@@ -63,17 +63,16 @@ Set reminders in x minutes, hours or days:
 `!reminder 2 hours: Feed the cat`  
 `!reminder 10d: Go swimming`
 
-**Recurring**: `!remind every 2h: Drink water`
-
-With a **random time**: `!remind 1-3d: Go to the gym`
-
-**Recurring** with a **random time**: `!remind every 10 to 20 days: Do the thing`
+- Recurring: `!remind every 2h: Drink water`
+- With a random time: `!remind 1-3d: Go to the gym`
+- Recurring with a random time: `!remind every 10 to 20 days: Do the thing`
 
 The random time interval is recalculated each time the reminder is sent, meaning a 1-3 day reminder could trigger after `1.5` days the first time and `2.2` days the next.
 
 **Hint:** Combine with other commands: `!reminder every 1-2d: !choose gym, run, swim`
 
-Manage reminders with:  
+##### Manage reminders:
+
 `!reminders` -> list of reminders  
 `!deletereminder 3` -> delete 3rd reminder from the list  
 `!deleteAllReminders` -> delete all reminders
