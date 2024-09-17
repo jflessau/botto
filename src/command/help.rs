@@ -23,9 +23,9 @@ pub fn text() -> String {
 !choose pizza, pasta, sushi
 
 🪨 - rock paper scissors
-!r rock
-!r paper
-!r scissors
+!rps rock
+!rps paper
+!rps scissors
 
 ⏲️ - reminder [minutes, hours, days]
 !reminder 10 minutes: Check the oven
